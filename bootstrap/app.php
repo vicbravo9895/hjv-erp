@@ -11,6 +11,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->trustProxies(at: '*');
+        
         $middleware->alias([
             'accounting.access' => \App\Http\Middleware\CheckAccountingAccess::class,
             'admin.access' => \App\Http\Middleware\CheckAdminAccess::class,
