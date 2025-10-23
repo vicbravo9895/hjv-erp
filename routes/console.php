@@ -12,7 +12,6 @@ Artisan::command('inspire', function () {
 app(Schedule::class)->command('samsara:sync-vehicles')
     ->everyMinute()
     ->withoutOverlapping()
-    ->runInBackground()
     ->when(function () {
         return config('samsara.sync.enable_vehicles_sync', true);
     });
@@ -20,7 +19,6 @@ app(Schedule::class)->command('samsara:sync-vehicles')
 app(Schedule::class)->command('samsara:sync-trailers')
     ->everyMinute()
     ->withoutOverlapping()
-    ->runInBackground()
     ->when(function () {
         return config('samsara.sync.enable_trailers_sync', true);
     });
