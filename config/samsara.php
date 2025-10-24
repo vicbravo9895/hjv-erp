@@ -24,7 +24,7 @@ return [
     */
     'endpoints' => [
         'vehicles' => env('SAMSARA_VEHICLES_ENDPOINT', '/fleet/vehicles/stats/feed'),
-        'trailers' => env('SAMSARA_TRAILERS_ENDPOINT', '/fleet/trailers/stats/feed'),
+        'trailers' => env('SAMSARA_TRAILERS_ENDPOINT', '/beta/fleet/trailers/stats/feed'),
         'drivers' => env('SAMSARA_DRIVERS_ENDPOINT', '/fleet/drivers'),
         'addresses' => env('SAMSARA_ADDRESSES_ENDPOINT', '/addresses'),
     ],
