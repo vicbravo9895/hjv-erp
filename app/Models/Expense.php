@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\HasAttachments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Expense extends Model
 {
+    use HasAttachments;
+
     protected $fillable = [
         'date',
         'amount',
@@ -14,7 +17,6 @@ class Expense extends Model
         'category_id',
         'provider_id',
         'cost_center_id',
-        'receipt_url',
     ];
 
     protected $casts = [

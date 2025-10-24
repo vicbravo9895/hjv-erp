@@ -126,13 +126,92 @@ class ExpenseResource extends BaseResource
                             ]),
                     ])->columns(3),
                 
-                Forms\Components\Section::make('Documentación')
+                Forms\Components\Section::make('Comprobantes')
                     ->schema([
-                        Forms\Components\TextInput::make('receipt_url')
-                            ->label('URL del Recibo')
-                            ->url()
-                            ->maxLength(255)
-                            ->columnSpanFull(),
+                        Forms\Components\FileUpload::make('attachments')
+                            ->label('Archivos Adjuntos')
+                            ->multiple()
+                            ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'])
+                            ->maxSize(10240) // 10MB
+                            ->directory('expenses-temp')
+                            ->disk('local') // Use local disk for temporary uploads
+                            ->visibility('private')
+                            ->downloadable()
+                            ->previewable()
+                            ->reorderable()
+                            ->helperText('Suba facturas, recibos o comprobantes. Formatos permitidos: PDF, JPG, PNG. Máximo 10MB por archivo.')
+                            ->columnSpanFull()
+                            ->saveRelationshipsUsing(function ($component, $state, $record) {
+                                if (!$record || empty($state)) return;
+
+                                // Delete existing attachments if new files are uploaded
+                                $record->attachments()->delete();
+
+                                // Create new attachments by moving files from local to MinIO
+                                foreach ($state as $localFilePath) {
+                                    if (is_string($localFilePath)) {
+                                        try {
+                                            // Get file info from local storage
+                                            $localDisk = \Storage::disk('local');
+                                            $minioDisk = \Storage::disk('minio');
+
+                                            if (!$localDisk->exists($localFilePath)) {
+                                                continue;
+                                            }
+
+                                            $fileName = basename($localFilePath);
+                                            $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+                                            $fileContent = $localDisk->get($localFilePath);
+                                            $fileSize = $localDisk->size($localFilePath);
+
+                                            // Generate unique path for MinIO
+                                            $minioPath = 'expenses/' . $record->id . '/' . time() . '_' . $fileName;
+
+                                            // Move file to MinIO
+                                            $minioDisk->put($minioPath, $fileContent, 'private');
+
+                                            // Determine MIME type from extension
+                                            $mimeType = match ($extension) {
+                                                'pdf' => 'application/pdf',
+                                                'jpg', 'jpeg' => 'image/jpeg',
+                                                'png' => 'image/png',
+                                                'gif' => 'image/gif',
+                                                default => 'application/octet-stream',
+                                            };
+
+                                            // Create attachment record
+                                            $record->attachments()->create([
+                                                'file_name' => $fileName,
+                                                'file_path' => $minioPath,
+                                                'file_size' => $fileSize,
+                                                'mime_type' => $mimeType,
+                                                'uploaded_by' => auth()->id(),
+                                            ]);
+
+                                            // Clean up local file
+                                            $localDisk->delete($localFilePath);
+
+                                        } catch (\Exception $e) {
+                                            \Log::error('Failed to move file to MinIO and create attachment', [
+                                                'local_path' => $localFilePath,
+                                                'error' => $e->getMessage()
+                                            ]);
+                                        }
+                                    }
+                                }
+                            })
+                            ->loadStateFromRelationshipsUsing(function ($component, $record) {
+                                if (!$record || !$record->exists) return [];
+
+                                // Return attachment info for display (but not editable)
+                                return $record->attachments->map(function ($attachment) {
+                                    return [
+                                        'name' => $attachment->file_name,
+                                        'size' => $attachment->file_size,
+                                        'url' => route('attachments.download', $attachment),
+                                    ];
+                                })->toArray();
+                            }),
                     ]),
             ]);
     }
@@ -140,6 +219,7 @@ class ExpenseResource extends BaseResource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['category', 'provider', 'costCenter', 'attachments']))
             ->columns([
                 Tables\Columns\TextColumn::make('date')
                     ->label('Fecha')
@@ -171,13 +251,14 @@ class ExpenseResource extends BaseResource
                     ->label('Centro de Costo')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\IconColumn::make('receipt_url')
-                    ->label('Recibo')
+                Tables\Columns\IconColumn::make('has_attachments')
+                    ->label('Archivos')
                     ->boolean()
-                    ->trueIcon('heroicon-o-document-text')
+                    ->trueIcon('heroicon-o-paper-clip')
                     ->falseIcon('heroicon-o-x-mark')
                     ->trueColor('success')
-                    ->falseColor('gray'),
+                    ->falseColor('danger')
+                    ->getStateUsing(fn ($record) => $record->attachments()->exists()),
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado')
                     ->dateTime()
