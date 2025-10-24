@@ -1,22 +1,16 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Console\Scheduling\Schedule;
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
-
 // Samsara Sync Scheduling - Execute every minute as per requirements
-app(Schedule::class)->command('samsara:sync-vehicles')
+app(Schedule::class)->command('samsara:sync-vehicles --force')
     ->everyMinute()
     ->withoutOverlapping()
     ->when(function () {
         return config('samsara.sync.enable_vehicles_sync', true);
     });
 
-app(Schedule::class)->command('samsara:sync-trailers')
+app(Schedule::class)->command('samsara:sync-trailers --force')
     ->everyMinute()
     ->withoutOverlapping()
     ->when(function () {
