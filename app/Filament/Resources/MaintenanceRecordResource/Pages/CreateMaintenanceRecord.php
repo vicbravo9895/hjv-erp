@@ -43,8 +43,10 @@ class CreateMaintenanceRecord extends CreateRecord
                         ])
                         ->required()
                         ->live()
+                        ->native(false)
                         ->afterStateUpdated(fn (Forms\Set $set) => $set('vehicle_id', null))
-                        ->helperText('Seleccione si el mantenimiento es para un tractocamión o trailer'),
+                        ->helperText('Seleccione si el mantenimiento es para un tractocamión o trailer')
+                        ->columnSpanFull(),
 
                     Forms\Components\Select::make('vehicle_id')
                         ->label('Vehículo')
@@ -59,56 +61,59 @@ class CreateMaintenanceRecord extends CreateRecord
                         })
                         ->required()
                         ->searchable()
+                        ->native(false)
                         ->helperText('Busque y seleccione el vehículo específico')
-                        ->disabled(fn (Forms\Get $get) => !$get('vehicle_type')),
+                        ->disabled(fn (Forms\Get $get) => !$get('vehicle_type'))
+                        ->columnSpanFull(),
 
                     Forms\Components\Select::make('maintenance_type')
                         ->label('Tipo de Mantenimiento')
                         ->options([
-                            'preventivo' => 'Preventivo - Mantenimiento programado regular',
-                            'correctivo' => 'Correctivo - Reparación de fallas detectadas',
-                            'emergencia' => 'Emergencia - Reparación urgente no programada',
-                            'inspeccion' => 'Inspección - Revisión general del vehículo',
+                            'preventivo' => 'Preventivo',
+                            'correctivo' => 'Correctivo',
+                            'emergencia' => 'Emergencia',
+                            'inspeccion' => 'Inspección',
                         ])
                         ->required()
-                        ->helperText('Seleccione el tipo de mantenimiento realizado'),
+                        ->native(false)
+                        ->helperText('Seleccione el tipo de mantenimiento realizado')
+                        ->columnSpanFull(),
 
                     Forms\Components\DatePicker::make('date')
                         ->label('Fecha del Mantenimiento')
                         ->required()
                         ->default(now())
                         ->maxDate(now())
-                        ->helperText('Fecha en que se realizó el mantenimiento'),
+                        ->native(false)
+                        ->helperText('Fecha en que se realizó el mantenimiento')
+                        ->columnSpanFull(),
                 ])
-                ->columns(2),
+                ->columns(1),
 
             // Step 2: Work Description
             Wizard\Step::make('Descripción del Trabajo')
                 ->icon('heroicon-o-document-text')
                 ->description('Describa el trabajo realizado')
                 ->schema([
-                    Forms\Components\MarkdownEditor::make('description')
+                    Forms\Components\Textarea::make('description')
                         ->label('Descripción Detallada')
                         ->required()
+                        ->rows(5)
+                        ->autosize()
                         ->helperText('Describa el trabajo realizado, problemas encontrados y soluciones aplicadas')
-                        ->columnSpanFull()
-                        ->toolbarButtons([
-                            'bold',
-                            'italic',
-                            'bulletList',
-                            'orderedList',
-                            'heading',
-                        ]),
+                        ->columnSpanFull(),
 
                     Forms\Components\Select::make('mechanic_id')
                         ->label('Mecánico Responsable')
                         ->relationship('mechanic', 'name', fn ($query) => $query->workshopUsers())
                         ->searchable(['name', 'email'])
                         ->preload()
+                        ->native(false)
                         ->getOptionLabelFromRecordUsing(fn (User $record): string => "{$record->name} - {$record->role}")
                         ->helperText('Seleccione el mecánico que realizó el trabajo')
                         ->visible(fn () => $formFieldResolver->isFieldVisible($user, MaintenanceRecord::class, 'mechanic_id'))
-                        ->disabled(fn () => !$formFieldResolver->isFieldEditable($user, MaintenanceRecord::class, 'mechanic_id')),
+                        ->disabled(fn () => !$formFieldResolver->isFieldEditable($user, MaintenanceRecord::class, 'mechanic_id'))
+                        ->columnSpanFull(),
                 ])
                 ->columns(1),
 
@@ -125,6 +130,7 @@ class CreateMaintenanceRecord extends CreateRecord
                                 ->options(SparePart::all()->pluck('name', 'id'))
                                 ->required()
                                 ->searchable()
+                                ->native(false)
                                 ->live()
                                 ->afterStateUpdated(function (Forms\Set $set, $state, Forms\Get $get) use ($stockValidationService) {
                                     if ($state) {
@@ -148,75 +154,71 @@ class CreateMaintenanceRecord extends CreateRecord
                                         }
                                     }
                                 })
-                                ->columnSpan(3),
+                                ->columnSpanFull(),
 
-                            Forms\Components\Placeholder::make('available_stock')
-                                ->label('Stock Disponible')
-                                ->content(fn (Forms\Get $get) => 
-                                    $get('available_stock') !== null
-                                        ? $get('available_stock') . ' unidades'
-                                        : 'N/A'
-                                )
-                                ->columnSpan(1),
+                            Forms\Components\Grid::make(3)
+                                ->schema([
+                                    Forms\Components\TextInput::make('quantity_used')
+                                        ->label('Cantidad')
+                                        ->numeric()
+                                        ->required()
+                                        ->minValue(0.01)
+                                        ->default(1)
+                                        ->live(onBlur: true)
+                                        ->afterStateUpdated(function (Forms\Set $set, $state, Forms\Get $get) use ($stockValidationService) {
+                                            if (empty($state) || $state === null || $state === '') {
+                                                $state = 1;
+                                                $set('quantity_used', 1);
+                                            }
+                                            $unitCost = $get('unit_cost') ?? 0;
+                                            $set('item_total', (float)$state * (float)$unitCost);
 
-                            Forms\Components\TextInput::make('quantity_used')
-                                ->label('Cantidad')
-                                ->numeric()
-                                ->required()
-                                ->minValue(0.01)
-                                ->default(1)
-                                ->live(onBlur: true)
-                                ->afterStateUpdated(function (Forms\Set $set, $state, Forms\Get $get) use ($stockValidationService) {
-                                    if (empty($state) || $state === null || $state === '') {
-                                        $state = 1;
-                                        $set('quantity_used', 1);
-                                    }
-                                    $unitCost = $get('unit_cost') ?? 0;
-                                    $set('item_total', (float)$state * (float)$unitCost);
+                                            // Real-time stock validation
+                                            $sparePartId = $get('spare_part_id');
+                                            if ($sparePartId) {
+                                                $validation = $stockValidationService->validatePartAvailability($sparePartId, $state);
+                                                if (!$validation->isValid) {
+                                                    $set('stock_warning', $validation->errors[0] ?? 'Stock insuficiente');
+                                                } else {
+                                                    $set('stock_warning', null);
+                                                }
+                                            }
+                                        })
+                                        ->rules([
+                                            'required',
+                                            'numeric',
+                                            'min:0.01',
+                                            fn (Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                                if (empty($value) || $value === null) {
+                                                    $fail("La cantidad es requerida.");
+                                                    return;
+                                                }
+                                                $stock = $get('available_stock');
+                                                if ($stock !== null && $value > $stock) {
+                                                    $fail("La cantidad ({$value}) excede el stock disponible ({$stock}).");
+                                                }
+                                            },
+                                        ])
+                                        ->helperText(fn (Forms\Get $get) =>
+                                            $get('available_stock') !== null
+                                                ? 'Stock: ' . $get('available_stock') . ' unidades'
+                                                : null
+                                        ),
 
-                                    // Real-time stock validation
-                                    $sparePartId = $get('spare_part_id');
-                                    if ($sparePartId) {
-                                        $validation = $stockValidationService->validatePartAvailability($sparePartId, $state);
-                                        if (!$validation->isValid) {
-                                            $set('stock_warning', $validation->errors[0] ?? 'Stock insuficiente');
-                                        } else {
-                                            $set('stock_warning', null);
-                                        }
-                                    }
-                                })
-                                ->rules([
-                                    'required',
-                                    'numeric',
-                                    'min:0.01',
-                                    fn (Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
-                                        if (empty($value) || $value === null) {
-                                            $fail("La cantidad es requerida.");
-                                            return;
-                                        }
-                                        $stock = $get('available_stock');
-                                        if ($stock !== null && $value > $stock) {
-                                            $fail("La cantidad ({$value}) excede el stock disponible ({$stock}).");
-                                        }
-                                    },
-                                ])
-                                ->columnSpan(1),
+                                    Forms\Components\TextInput::make('unit_cost')
+                                        ->label('Costo Unit.')
+                                        ->numeric()
+                                        ->prefix('$')
+                                        ->disabled()
+                                        ->dehydrated(false),
 
-                            Forms\Components\TextInput::make('unit_cost')
-                                ->label('Costo Unit.')
-                                ->numeric()
-                                ->prefix('$')
-                                ->disabled()
-                                ->dehydrated(false)
-                                ->columnSpan(1),
-
-                            Forms\Components\TextInput::make('item_total')
-                                ->label('Total')
-                                ->numeric()
-                                ->prefix('$')
-                                ->disabled()
-                                ->dehydrated(false)
-                                ->columnSpan(1),
+                                    Forms\Components\TextInput::make('item_total')
+                                        ->label('Total')
+                                        ->numeric()
+                                        ->prefix('$')
+                                        ->disabled()
+                                        ->dehydrated(false),
+                                ]),
 
                             Forms\Components\Hidden::make('available_stock')
                                 ->dehydrated(false),
@@ -229,14 +231,15 @@ class CreateMaintenanceRecord extends CreateRecord
                                 ->content(fn (Forms\Get $get) => $get('stock_warning'))
                                 ->visible(fn (Forms\Get $get) => $get('stock_warning') !== null)
                                 ->extraAttributes(['class' => 'text-danger-600 font-semibold'])
-                                ->columnSpan(7),
+                                ->columnSpanFull(),
 
                             Forms\Components\Textarea::make('notes')
                                 ->label('Notas')
                                 ->rows(2)
-                                ->columnSpan(7),
+                                ->autosize()
+                                ->columnSpanFull(),
                         ])
-                        ->columns(7)
+                        ->columns(1)
                         ->defaultItems(0)
                         ->addActionLabel('Agregar Refacción')
                         ->reorderable(false)
@@ -291,6 +294,14 @@ class CreateMaintenanceRecord extends CreateRecord
                         ->previewable()
                         ->reorderable()
                         ->imageEditor()
+                        ->imageEditorAspectRatios([
+                            null,
+                            '16:9',
+                            '4:3',
+                            '1:1',
+                        ])
+                        ->orientImagesFromExif()
+                        ->maxFiles(10)
                         ->helperText('Suba fotos del trabajo realizado, facturas o comprobantes. Formatos: PDF, JPG, PNG. Máximo 10MB por archivo.')
                         ->columnSpanFull()
                         ->dehydrated(false),
