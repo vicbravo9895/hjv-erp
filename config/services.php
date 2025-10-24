@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'samsara' => [
+        'api_token' => env('SAMSARA_API_TOKEN'),
+        'base_url' => env('SAMSARA_BASE_URL', 'https://api.samsara.com'),
+        'default_tag_ids' => env('SAMSARA_DEFAULT_TAG_IDS'),
+    ],
+
 ];

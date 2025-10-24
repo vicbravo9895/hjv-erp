@@ -52,7 +52,13 @@ class SyncVehicles extends Command
 
         $startTime = now();
         $limit = (int) $this->option('limit');
-        $tagIds = $this->option('tag-ids') ? explode(',', $this->option('tag-ids')) : null;
+        
+        // Get tag IDs from command option or environment variable
+        $tagIds = $this->option('tag-ids') 
+            ? explode(',', $this->option('tag-ids'))
+            : (config('services.samsara.default_tag_ids') 
+                ? explode(',', config('services.samsara.default_tag_ids'))
+                : null);
 
         // Start sync logging
         $syncLog = $this->syncLogService->startSync('vehicles', [
@@ -61,7 +67,11 @@ class SyncVehicles extends Command
             'forced' => $this->option('force'),
         ]);
 
-        $this->info("Starting vehicle synchronization...");
+        if ($tagIds) {
+            $this->info("Starting vehicle synchronization with tag filter: " . implode(', ', $tagIds));
+        } else {
+            $this->info("Starting vehicle synchronization (no tag filter)...");
+        }
 
         try {
             $syncedCount = 0;
